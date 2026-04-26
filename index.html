@@ -28,10 +28,16 @@
     button:hover { background: #6d28d9; }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
     #status { margin-top: 1.5rem; font-size: 0.875rem; color: #71717a; min-height: 1.25rem; }
+    .next-banner {
+      font-size: 0.8rem; color: #71717a; margin-bottom: 1.25rem;
+      padding: 0.5rem 0.875rem; border: 1px solid #27272a; border-radius: 0.375rem;
+    }
+    .next-banner code { color: #d4d4d8; font-family: ui-monospace, monospace; }
   </style>
 </head>
 <body>
   <h1>Modernized AI</h1>
+  <div id="next-banner"></div>
   <p id="tagline">Sign in to continue.</p>
   <button id="signin">Sign in with GitHub</button>
   <div id="status"></div>
@@ -41,14 +47,50 @@
 
     const SUPABASE_URL = 'https://cnwxxlruuuqisjezsgje.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_9I9IqX9bKKHMfQdjklZAdg_DpTbdPyM';
+    const NEXT_KEY = 'modernized-ai.next';
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     const btn = document.getElementById('signin');
     const status = document.getElementById('status');
     const tagline = document.getElementById('tagline');
+    const banner = document.getElementById('next-banner');
+
+    // Parse and persist `?next=URL` so it survives the OAuth round trip.
+    const params = new URLSearchParams(location.search);
+    const nextParam = params.get('next');
+    if (nextParam) {
+      sessionStorage.setItem(NEXT_KEY, nextParam);
+    }
+    const next = sessionStorage.getItem(NEXT_KEY);
+    if (next) {
+      try {
+        const u = new URL(next);
+        banner.className = 'next-banner';
+        banner.innerHTML = `Signing into <code>${u.host || u.protocol}</code>`;
+      } catch {
+        banner.className = 'next-banner';
+        banner.innerHTML = `Signing into <code>${next.slice(0, 60)}</code>`;
+      }
+    }
+
+    function handoff(session, target) {
+      const url = new URL(target);
+      url.hash = new URLSearchParams({
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+        token_type: 'bearer',
+        expires_in: String(session.expires_in ?? 3600),
+        provider_token: session.provider_token ?? '',
+      }).toString();
+      sessionStorage.removeItem(NEXT_KEY);
+      location.href = url.toString();
+    }
 
     const { data: { session } } = await supabase.auth.getSession();
-    if (session) {
+
+    if (session && next) {
+      handoff(session, next);
+    } else if (session) {
       tagline.textContent = `Welcome back, ${session.user.email}.`;
       btn.textContent = 'Sign out';
       status.textContent = '';

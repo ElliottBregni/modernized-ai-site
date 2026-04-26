@@ -38,6 +38,7 @@
 
     const SUPABASE_URL = 'https://cnwxxlruuuqisjezsgje.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_9I9IqX9bKKHMfQdjklZAdg_DpTbdPyM';
+    const NEXT_KEY = 'modernized-ai.next';
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     const message = document.getElementById('message');
@@ -49,17 +50,35 @@
       message.classList.add('error');
     }
 
+    function handoff(session, target) {
+      const url = new URL(target);
+      url.hash = new URLSearchParams({
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+        token_type: 'bearer',
+        expires_in: String(session.expires_in ?? 3600),
+        provider_token: session.provider_token ?? '',
+      }).toString();
+      sessionStorage.removeItem(NEXT_KEY);
+      location.href = url.toString();
+    }
+
+    async function settle() {
+      const next = sessionStorage.getItem(NEXT_KEY);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return false;
+      message.textContent = next ? 'Redirecting to app…' : 'Signed in. Redirecting…';
+      if (next) handoff(session, next);
+      else setTimeout(() => { location.href = '/'; }, 400);
+      return true;
+    }
+
     try {
-      const { data, error } = await supabase.auth.getSession();
-      if (error) { fail(`Sign-in failed: ${error.message}`); }
-      else if (data.session) {
-        message.textContent = 'Signed in. Redirecting…';
-        setTimeout(() => { location.href = '/'; }, 600);
-      } else {
+      if (await settle()) { /* done */ }
+      else {
+        // OAuth fragment may still be processing; retry briefly.
         setTimeout(async () => {
-          const { data: retry } = await supabase.auth.getSession();
-          if (retry.session) location.href = '/';
-          else fail('Sign-in timed out. Try again.');
+          if (!(await settle())) fail('Sign-in timed out. Try again.');
         }, 1500);
       }
     } catch (e) {
