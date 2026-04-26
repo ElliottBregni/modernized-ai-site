@@ -40,7 +40,21 @@
   <div class="card">
     <div class="check">&check;</div>
     <h1>Signed in</h1>
-    <p>Return to your terminal — your CLI session is ready. You can close this tab.</p>
+    <p>Return to your terminal — your CLI session is ready.</p>
+    <p id="hint" style="margin-top: 0.75rem; font-size: 0.8rem; opacity: 0.7;">Closing this tab…</p>
   </div>
+  <script>
+    // Try to auto-close. Browsers block window.close() on tabs the user
+    // opened directly (not via window.open from another page), so this is
+    // best-effort — if blocked, the message above tells the user to close.
+    setTimeout(() => {
+      window.close();
+      // If we're still here after attempting close, the browser blocked it.
+      setTimeout(() => {
+        const h = document.getElementById('hint');
+        if (h) h.textContent = 'You can close this tab.';
+      }, 300);
+    }, 800);
+  </script>
 </body>
 </html>
