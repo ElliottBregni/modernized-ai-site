@@ -32,7 +32,7 @@
 </head>
 <body>
   <h1>Modernized AI</h1>
-  <p>Sign in to continue.</p>
+  <p id="tagline">Sign in to continue.</p>
   <button id="signin">Sign in with GitHub</button>
   <div id="status"></div>
 
@@ -45,11 +45,13 @@
 
     const btn = document.getElementById('signin');
     const status = document.getElementById('status');
+    const tagline = document.getElementById('tagline');
 
     const { data: { session } } = await supabase.auth.getSession();
     if (session) {
+      tagline.textContent = `Welcome back, ${session.user.email}.`;
       btn.textContent = 'Sign out';
-      status.textContent = `Signed in as ${session.user.email}`;
+      status.textContent = '';
       btn.onclick = async () => {
         await supabase.auth.signOut();
         location.reload();
