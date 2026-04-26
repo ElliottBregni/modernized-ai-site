@@ -39,6 +39,7 @@
     const SUPABASE_URL = 'https://cnwxxlruuuqisjezsgje.supabase.co';
     const SUPABASE_ANON_KEY = 'sb_publishable_9I9IqX9bKKHMfQdjklZAdg_DpTbdPyM';
     const NEXT_KEY = 'modernized-ai.next';
+    const MODE_KEY = 'modernized-ai.response_mode';
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     const message = document.getElementById('message');
@@ -52,14 +53,23 @@
 
     function handoff(session, target) {
       const url = new URL(target);
-      url.hash = new URLSearchParams({
+      const responseMode = sessionStorage.getItem(MODE_KEY) || 'fragment';
+      const tokens = {
         access_token: session.access_token,
         refresh_token: session.refresh_token,
         token_type: 'bearer',
         expires_in: String(session.expires_in ?? 3600),
         provider_token: session.provider_token ?? '',
-      }).toString();
+      };
+      if (responseMode === 'query') {
+        const sp = new URLSearchParams(url.search);
+        for (const [k, v] of Object.entries(tokens)) sp.set(k, v);
+        url.search = sp.toString();
+      } else {
+        url.hash = new URLSearchParams(tokens).toString();
+      }
       sessionStorage.removeItem(NEXT_KEY);
+      sessionStorage.removeItem(MODE_KEY);
       location.href = url.toString();
     }
 
