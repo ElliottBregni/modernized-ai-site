@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="referrer" content="no-referrer" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://esm.sh; connect-src https://cnwxxlruuuqisjezsgje.supabase.co; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'self'" />
+  <title>Authorize application — Modernized AI</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; min-height: 100%; }
+    body {
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+      background: #0a0a0a;
+      color: #f4f4f5;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+    .card {
+      width: min(100%, 34rem);
+      padding: 2rem;
+      border: 1px solid #27272a;
+      border-radius: 0.875rem;
+      background: #18181b;
+      box-shadow: 0 1.5rem 5rem rgb(0 0 0 / 0.35);
+    }
+    .eyebrow { margin: 0 0 0.75rem; color: #a78bfa; font-size: 0.8rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+    h1 { margin: 0 0 0.75rem; font-size: 1.65rem; letter-spacing: -0.02em; }
+    p { color: #a1a1aa; line-height: 1.55; }
+    .details { margin: 1.5rem 0; padding: 1rem; border: 1px solid #27272a; border-radius: 0.625rem; background: #09090b; }
+    .detail { margin: 0.75rem 0; }
+    .label { display: block; margin-bottom: 0.25rem; color: #71717a; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; }
+    code { overflow-wrap: anywhere; color: #d4d4d8; }
+    ul { margin: 0.5rem 0 0; padding-left: 1.25rem; color: #d4d4d8; }
+    .actions { display: flex; gap: 0.75rem; justify-content: flex-end; margin-top: 1.5rem; }
+    button {
+      border: 0;
+      border-radius: 0.5rem;
+      padding: 0.75rem 1.15rem;
+      font-size: 0.95rem;
+      font-weight: 650;
+      cursor: pointer;
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .primary { background: #7c3aed; color: #fff; }
+    .primary:hover { background: #6d28d9; }
+    .secondary { background: #27272a; color: #e4e4e7; }
+    .secondary:hover { background: #3f3f46; }
+    #status { min-height: 1.25rem; margin: 1rem 0 0; color: #a1a1aa; font-size: 0.875rem; }
+    #status.error { color: #f87171; }
+    #account { margin: 1rem 0 0; color: #71717a; font-size: 0.8rem; }
+    [hidden] { display: none; }
+    @media (max-width: 32rem) {
+      .actions { flex-direction: column-reverse; }
+      button { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <p class="eyebrow">Modernized AI</p>
+    <h1 id="heading">Authorization request</h1>
+    <p id="summary">Checking this request…</p>
+
+    <section id="details" class="details" hidden aria-labelledby="heading">
+      <div class="detail">
+        <span class="label">Application</span>
+        <strong id="client-name"></strong>
+      </div>
+      <div class="detail">
+        <span class="label">Redirect destination</span>
+        <code id="redirect-uri"></code>
+      </div>
+      <div class="detail" id="scopes-block">
+        <span class="label">Requested permissions</span>
+        <ul id="scopes"></ul>
+      </div>
+    </section>
+
+    <div id="actions" class="actions" hidden>
+      <button id="deny" class="secondary" type="button">Deny</button>
+      <button id="approve" class="primary" type="button">Approve</button>
+    </div>
+    <div id="signin-actions" class="actions" hidden>
+      <button id="signin" class="primary" type="button">Sign in with GitHub</button>
+    </div>
+    <div id="status" role="status" aria-live="polite"></div>
+    <div id="account"></div>
+  </main>
+
+  <script type="module">
+    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2';
+
+    const SUPABASE_URL = 'https://cnwxxlruuuqisjezsgje.supabase.co';
+    const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_9I9IqX9bKKHMfQdjklZAdg_DpTbdPyM';
+    const CALLBACK_URL = `${location.origin}/auth/callback/`;
+    const RETURN_TO_KEY = 'modernized-ai.return_to';
+    const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+
+    const params = new URLSearchParams(location.search);
+    const authorizationId = params.get('authorization_id');
+    const heading = document.getElementById('heading');
+    const summary = document.getElementById('summary');
+    const details = document.getElementById('details');
+    const clientName = document.getElementById('client-name');
+    const redirectUri = document.getElementById('redirect-uri');
+    const scopesBlock = document.getElementById('scopes-block');
+    const scopes = document.getElementById('scopes');
+    const actions = document.getElementById('actions');
+    const signInActions = document.getElementById('signin-actions');
+    const approve = document.getElementById('approve');
+    const deny = document.getElementById('deny');
+    const signIn = document.getElementById('signin');
+    const status = document.getElementById('status');
+    const account = document.getElementById('account');
+
+    function showError(message) {
+      summary.textContent = 'This authorization request could not be completed.';
+      status.textContent = message;
+      status.classList.add('error');
+      actions.hidden = true;
+      signInActions.hidden = true;
+    }
+
+    function redirectFromSupabase(url) {
+      if (!url || typeof url !== 'string') {
+        throw new Error('Supabase did not return a redirect URL.');
+      }
+      location.assign(url);
+    }
+
+    function setBusy(isBusy, message = '') {
+      approve.disabled = isBusy;
+      deny.disabled = isBusy;
+      signIn.disabled = isBusy;
+      status.classList.remove('error');
+      status.textContent = message;
+    }
+
+    async function beginSignIn() {
+      if (!authorizationId) return;
+      setBusy(true, 'Opening GitHub sign in…');
+      sessionStorage.setItem(RETURN_TO_KEY, `${location.pathname}${location.search}`);
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'github',
+        options: { redirectTo: CALLBACK_URL },
+      });
+      if (error) {
+        sessionStorage.removeItem(RETURN_TO_KEY);
+        setBusy(false);
+        showError(`Unable to start sign in: ${error.message}`);
+      }
+    }
+
+    async function decide(decision) {
+      setBusy(true, decision === 'approve' ? 'Approving…' : 'Denying…');
+      try {
+        const method = decision === 'approve'
+          ? supabase.auth.oauth.approveAuthorization.bind(supabase.auth.oauth)
+          : supabase.auth.oauth.denyAuthorization.bind(supabase.auth.oauth);
+        const { data, error } = await method(authorizationId);
+        if (error) throw error;
+        redirectFromSupabase(data?.redirect_url);
+      } catch (error) {
+        setBusy(false);
+        showError(`Unable to ${decision} this request: ${error.message}`);
+      }
+    }
+
+    async function load() {
+      if (!authorizationId) {
+        showError('Missing authorization_id. Start a new login from the requesting application.');
+        return;
+      }
+
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+          summary.textContent = 'Sign in before reviewing this application request.';
+          signInActions.hidden = false;
+          signIn.onclick = beginSignIn;
+          return;
+        }
+
+        account.textContent = `Signed in as ${user.email ?? 'your account'}`;
+        const { data: authorization, error } =
+          await supabase.auth.oauth.getAuthorizationDetails(authorizationId);
+        if (error) throw error;
+        if (!authorization) throw new Error('Supabase returned no authorization details.');
+
+        if (!('authorization_id' in authorization)) {
+          redirectFromSupabase(authorization.redirect_url);
+          return;
+        }
+
+        const name = authorization.client?.name || 'Unknown application';
+        const requestedScopes = (authorization.scope || '')
+          .split(/\s+/)
+          .filter(Boolean);
+
+        heading.textContent = `Authorize ${name}`;
+        summary.textContent = 'Review the application and permissions before continuing.';
+        clientName.textContent = name;
+        redirectUri.textContent = authorization.redirect_uri || 'Not provided';
+
+        scopes.replaceChildren();
+        if (requestedScopes.length === 0) {
+          scopesBlock.hidden = true;
+        } else {
+          for (const requestedScope of requestedScopes) {
+            const item = document.createElement('li');
+            item.textContent = requestedScope;
+            scopes.appendChild(item);
+          }
+        }
+
+        details.hidden = false;
+        actions.hidden = false;
+        approve.onclick = () => decide('approve');
+        deny.onclick = () => decide('deny');
+        status.textContent = '';
+      } catch (error) {
+        showError(error.message || 'Invalid or expired authorization request.');
+      }
+    }
+
+    load();
+  </script>
+</body>
+</html>

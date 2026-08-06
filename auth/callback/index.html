@@ -3,11 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="referrer" content="no-referrer" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://esm.sh; connect-src https://cnwxxlruuuqisjezsgje.supabase.co; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'self'" />
   <title>Signing in… — Modernized AI</title>
   <style>
     :root { color-scheme: dark; }
-    html, body { margin: 0; padding: 0; height: 100%; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; min-height: 100%; }
     body {
+      min-height: 100vh;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
       background: #0a0a0a;
       color: #f4f4f5;
@@ -19,80 +23,100 @@
       padding: 2rem;
     }
     .spinner {
-      width: 2.5rem; height: 2.5rem;
-      border: 3px solid #27272a; border-top-color: #7c3aed;
-      border-radius: 50%; animation: spin 0.8s linear infinite;
+      width: 2.5rem;
+      height: 2.5rem;
+      border: 3px solid #27272a;
+      border-top-color: #7c3aed;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
       margin-bottom: 1.5rem;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
     p { color: #a1a1aa; margin: 0; }
     .error { color: #f87171; }
+    a { color: #c4b5fd; margin-top: 1rem; }
+    [hidden] { display: none; }
   </style>
 </head>
 <body>
-  <div class="spinner" id="spinner"></div>
-  <p id="message">Completing sign in…</p>
+  <div class="spinner" id="spinner" aria-hidden="true"></div>
+  <p id="message" role="status" aria-live="polite">Completing sign in…</p>
+  <a id="return-home" href="/" hidden>Return to sign in</a>
 
   <script type="module">
-    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.112.2';
 
     const SUPABASE_URL = 'https://cnwxxlruuuqisjezsgje.supabase.co';
-    const SUPABASE_ANON_KEY = 'sb_publishable_9I9IqX9bKKHMfQdjklZAdg_DpTbdPyM';
-    const NEXT_KEY = 'modernized-ai.next';
-    const MODE_KEY = 'modernized-ai.response_mode';
-    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_9I9IqX9bKKHMfQdjklZAdg_DpTbdPyM';
+    const RETURN_TO_KEY = 'modernized-ai.return_to';
+    const CONSENT_PATH = '/oauth/consent/';
+    const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
 
     const message = document.getElementById('message');
     const spinner = document.getElementById('spinner');
+    const returnHome = document.getElementById('return-home');
 
     function fail(text) {
-      spinner.style.display = 'none';
+      spinner.hidden = true;
       message.textContent = text;
       message.classList.add('error');
+      returnHome.hidden = false;
     }
 
-    function handoff(session, target) {
-      const url = new URL(target);
-      const responseMode = sessionStorage.getItem(MODE_KEY) || 'fragment';
-      const tokens = {
-        access_token: session.access_token,
-        refresh_token: session.refresh_token,
-        token_type: 'bearer',
-        expires_in: String(session.expires_in ?? 3600),
-        provider_token: session.provider_token ?? '',
-      };
-      if (responseMode === 'query') {
-        const sp = new URLSearchParams(url.search);
-        for (const [k, v] of Object.entries(tokens)) sp.set(k, v);
-        url.search = sp.toString();
-      } else {
-        url.hash = new URLSearchParams(tokens).toString();
+    function safeReturnPath() {
+      const value = sessionStorage.getItem(RETURN_TO_KEY);
+      if (!value) return '/';
+
+      try {
+        const url = new URL(value, location.origin);
+        if (url.origin === location.origin && url.pathname === CONSENT_PATH) {
+          return `${url.pathname}${url.search}`;
+        }
+      } catch {
+        // Invalid values fall back to the site root.
       }
-      sessionStorage.removeItem(NEXT_KEY);
-      sessionStorage.removeItem(MODE_KEY);
-      location.href = url.toString();
+      return '/';
     }
 
-    async function settle() {
-      const next = sessionStorage.getItem(NEXT_KEY);
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return false;
-      message.textContent = next ? 'Redirecting to app…' : 'Signed in. Redirecting…';
-      if (next) handoff(session, next);
-      else setTimeout(() => { location.href = '/'; }, 400);
-      return true;
+    function oauthError() {
+      const query = new URLSearchParams(location.search);
+      const fragment = new URLSearchParams(location.hash.slice(1));
+      return query.get('error_description') || query.get('error') ||
+        fragment.get('error_description') || fragment.get('error');
     }
 
-    try {
-      if (await settle()) { /* done */ }
-      else {
-        // OAuth fragment may still be processing; retry briefly.
-        setTimeout(async () => {
-          if (!(await settle())) fail('Sign-in timed out. Try again.');
-        }, 1500);
+    const callbackError = oauthError();
+    if (callbackError) {
+      sessionStorage.removeItem(RETURN_TO_KEY);
+      history.replaceState(null, '', location.pathname);
+      fail(`Sign in failed: ${callbackError}`);
+    } else {
+      const returnPath = safeReturnPath();
+      let attempts = 0;
+
+      async function settle() {
+        attempts += 1;
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            sessionStorage.removeItem(RETURN_TO_KEY);
+            history.replaceState(null, '', location.pathname);
+            message.textContent = 'Signed in. Redirecting…';
+            location.replace(returnPath);
+            return;
+          }
+        } catch {
+          // The SDK may still be processing the provider response.
+        }
+
+        if (attempts < 10) {
+          setTimeout(settle, 300);
+        } else {
+          fail('Sign-in timed out. Return to the sign-in page and try again.');
+        }
       }
-    } catch (e) {
-      fail(`Unexpected error: ${e.message}`);
+
+      settle();
     }
   </script>
 </body>
